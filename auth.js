@@ -8,31 +8,54 @@ const JWKS = createRemoteJWKSet(
   new URL("/api/auth/jwks", BETTER_AUTH_URL)
 );
 
+// Read HTTPOnly Cookie
+const getCookie = (cookieHeader, name) => {
+  if (!cookieHeader) return null;
+
+  const cookie = cookieHeader
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`));
+
+  if (!cookie) return null;
+
+  return decodeURIComponent(cookie.slice(name.length + 1));
+};
+
+// Cookie-only JWT Verification
 export const verifyToken = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    const token = getCookie(
+      req.headers.cookie,
+      "better-auth.session_data"
+    );
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    // Reject unauthorized requests
+    if (!token) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized. Please login first.",
       });
     }
 
-    const token = authHeader.split(" ")[1];
-
+    // Verify JWT using BetterAuth JWKS
     const { payload } = await jwtVerify(token, JWKS, {
       issuer: BETTER_AUTH_URL,
-      audience: BETTER_AUTH_URL,
+      audience: "better-auth:session-cache",
     });
 
+    const tokenUser =
+      typeof payload.user === "object" && payload.user !== null
+        ? payload.user
+        : {};
+
     req.user = {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name,
+      id: payload.sub || tokenUser.id,
+      email: tokenUser.email || payload.email,
+      name: tokenUser.name || payload.name,
     };
 
-    next();
+    return next();
   } catch (error) {
     console.error("JWT verification failed:", error.message);
 
