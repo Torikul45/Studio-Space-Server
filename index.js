@@ -149,10 +149,13 @@ app.get("/studios", async (req, res) => {
       .sort({ _id: -1 })
       .toArray();
 
-    res.send(studios);
+    return res.status(200).send(studios);
   } catch (error) {
     console.error("Failed to get studios:", error.message);
-    res.status(500).send({ message: "Failed to get studios" });
+
+    return res.status(500).send({
+      message: "Failed to get studios.",
+    });
   }
 });
 
@@ -169,10 +172,13 @@ app.get("/studios/featured", async (req, res) => {
       .limit(6)
       .toArray();
 
-    res.send(studios);
+    return res.status(200).send(studios);
   } catch (error) {
     console.error("Failed to get featured studios:", error.message);
-    res.status(500).send({ message: "Failed to get featured studios" });
+
+    return res.status(500).send({
+      message: "Failed to get featured studios.",
+    });
   }
 });
 
@@ -182,7 +188,9 @@ app.get("/studios/:id", async (req, res) => {
     const { id } = req.params;
 
     if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid studio ID" });
+      return res.status(400).send({
+        message: "Invalid studio ID.",
+      });
     }
 
     const studio = await studiosCollection.findOne({
@@ -190,13 +198,18 @@ app.get("/studios/:id", async (req, res) => {
     });
 
     if (!studio) {
-      return res.status(404).send({ message: "Studio not found" });
+      return res.status(404).send({
+        message: "Studio not found.",
+      });
     }
 
-    res.send(studio);
+    return res.status(200).send(studio);
   } catch (error) {
     console.error("Failed to get studio:", error.message);
-    res.status(500).send({ message: "Failed to get studio" });
+
+    return res.status(500).send({
+      message: "Failed to get studio.",
+    });
   }
 });
 
@@ -271,7 +284,7 @@ app.post("/studios", verifyToken, async (req, res) => {
 
     const result = await studiosCollection.insertOne(newStudio);
 
-    res.status(201).send({
+    return res.status(201).send({
       success: true,
       message: "Studio added successfully!",
       insertedId: result.insertedId,
@@ -279,7 +292,7 @@ app.post("/studios", verifyToken, async (req, res) => {
   } catch (error) {
     console.error("Failed to add studio:", error.message);
 
-    res.status(500).send({
+    return res.status(500).send({
       success: false,
       message: "Failed to add studio.",
     });
@@ -385,14 +398,14 @@ app.put("/studios/:id", verifyToken, async (req, res) => {
       });
     }
 
-    res.status(200).send({
+    return res.status(200).send({
       success: true,
       message: "Studio updated successfully!",
     });
   } catch (error) {
     console.error("Failed to update studio:", error.message);
 
-    res.status(500).send({
+    return res.status(500).send({
       success: false,
       message: "Failed to update studio.",
     });
@@ -443,14 +456,14 @@ app.delete("/studios/:id", verifyToken, async (req, res) => {
       });
     }
 
-    res.status(200).send({
+    return res.status(200).send({
       success: true,
       message: "Studio deleted successfully!",
     });
   } catch (error) {
     console.error("Failed to delete studio:", error.message);
 
-    res.status(500).send({
+    return res.status(500).send({
       success: false,
       message: "Failed to delete studio.",
     });
@@ -460,13 +473,15 @@ app.delete("/studios/:id", verifyToken, async (req, res) => {
 // Create New Booking - JWT Protected
 app.post("/bookings", verifyToken, async (req, res) => {
   try {
-    const { studioId, bookingDate, startTime, endTime, totalAmount } = req.body;
+    // Never trust the price sent by the client
+    const { studioId, bookingDate, startTime, endTime } = req.body;
 
     const userName = req.user?.name?.trim();
     const userEmail = req.user?.email?.trim().toLowerCase();
 
     if (!userName || !userEmail) {
       return res.status(401).send({
+        success: false,
         message: "Authenticated user information is missing.",
       });
     }
@@ -476,20 +491,20 @@ app.post("/bookings", verifyToken, async (req, res) => {
       !ObjectId.isValid(studioId) ||
       !bookingDate ||
       !startTime ||
-      !endTime ||
-      totalAmount === undefined ||
-      !Number.isFinite(Number(totalAmount)) ||
-      Number(totalAmount) <= 0
+      !endTime
     ) {
       return res.status(400).send({
+        success: false,
         message: "Please provide valid booking information.",
       });
     }
 
+    // Validate booking date
     const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
     if (!datePattern.test(bookingDate)) {
       return res.status(400).send({
+        success: false,
         message: "Please provide a valid booking date.",
       });
     }
@@ -503,10 +518,12 @@ app.post("/bookings", verifyToken, async (req, res) => {
       selectedDate.getUTCDate() !== day
     ) {
       return res.status(400).send({
+        success: false,
         message: "Please provide a valid booking date.",
       });
     }
 
+    // Validate booking time
     const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
 
     if (
@@ -515,19 +532,50 @@ app.post("/bookings", verifyToken, async (req, res) => {
       startTime >= endTime
     ) {
       return res.status(400).send({
+        success: false,
         message: "Please provide a valid booking time.",
       });
     }
 
+    // Find studio from MongoDB
     const studio = await studiosCollection.findOne({
       _id: new ObjectId(studioId),
     });
 
     if (!studio) {
       return res.status(404).send({
+        success: false,
         message: "Studio not found.",
       });
     }
+
+    // Calculate booking price securely on the server
+    const hourlyRate = Number(studio.hourlyRate);
+    const securityDeposit = Number(studio.securityDeposit ?? 0);
+
+    const [startHour, startMinute] = startTime.split(":").map(Number);
+    const [endHour, endMinute] = endTime.split(":").map(Number);
+
+    const startMinutes = startHour * 60 + startMinute;
+    const endMinutes = endHour * 60 + endMinute;
+    const durationHours = (endMinutes - startMinutes) / 60;
+
+    if (
+      !Number.isFinite(hourlyRate) ||
+      hourlyRate <= 0 ||
+      !Number.isFinite(securityDeposit) ||
+      securityDeposit < 0 ||
+      durationHours <= 0
+    ) {
+      return res.status(400).send({
+        success: false,
+        message: "Invalid studio pricing or booking duration.",
+      });
+    }
+
+    const calculatedTotalAmount = Number(
+      (hourlyRate * durationHours + securityDeposit).toFixed(2),
+    );
 
     // Prevent overlapping Confirmed bookings
     const conflictingBooking = await bookingsCollection.findOne({
@@ -540,10 +588,12 @@ app.post("/bookings", verifyToken, async (req, res) => {
 
     if (conflictingBooking) {
       return res.status(409).send({
+        success: false,
         message: "This studio is already booked for the selected time.",
       });
     }
 
+    // Save booking using server-calculated price
     const newBooking = {
       studioId,
       studioTitle: studio.title,
@@ -554,21 +604,24 @@ app.post("/bookings", verifyToken, async (req, res) => {
       bookingDate,
       startTime,
       endTime,
-      totalAmount: Number(totalAmount),
+      totalAmount: calculatedTotalAmount,
       status: "Pending",
       createdAt: new Date(),
     };
 
     const result = await bookingsCollection.insertOne(newBooking);
 
-    res.status(201).send({
+    return res.status(201).send({
+      success: true,
       message: "Booking created successfully!",
       insertedId: result.insertedId,
+      totalAmount: calculatedTotalAmount,
     });
   } catch (error) {
     console.error("Failed to create booking:", error.message);
 
-    res.status(500).send({
+    return res.status(500).send({
+      success: false,
       message: "Failed to create booking.",
     });
   }
@@ -581,6 +634,7 @@ app.get("/bookings", verifyToken, async (req, res) => {
 
     if (!userEmail) {
       return res.status(401).send({
+        success: false,
         message: "Authenticated user email is missing.",
       });
     }
@@ -616,11 +670,12 @@ app.get("/bookings", verifyToken, async (req, res) => {
       }),
     );
 
-    res.status(200).send(bookingsWithStudioDetails);
+    return res.status(200).send(bookingsWithStudioDetails);
   } catch (error) {
     console.error("Failed to get bookings:", error.message);
 
-    res.status(500).send({
+    return res.status(500).send({
+      success: false,
       message: "Failed to get bookings.",
     });
   }
@@ -665,13 +720,14 @@ app.patch("/bookings/:id/cancel", verifyToken, async (req, res) => {
       });
     }
 
-    res.status(200).send({
+    return res.status(200).send({
+      success: true,
       message: "Booking cancelled successfully!",
     });
   } catch (error) {
     console.error("Failed to cancel booking:", error.message);
 
-    res.status(500).send({
+    return res.status(500).send({
       message: "Failed to cancel booking.",
     });
   }
@@ -683,7 +739,6 @@ app.post("/studios/:id/reviews", verifyToken, async (req, res) => {
     const { id } = req.params;
     const { rating, comment } = req.body;
 
-    // User information comes from the verified JWT, not request body
     const userName = req.user?.name?.trim();
     const userEmail = req.user?.email?.trim().toLowerCase();
 
@@ -794,7 +849,20 @@ app.get("/studios/:id/reviews", async (req, res) => {
     const { id } = req.params;
 
     if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid studio ID" });
+      return res.status(400).send({
+        message: "Invalid studio ID.",
+      });
+    }
+
+    const studio = await studiosCollection.findOne(
+      { _id: new ObjectId(id) },
+      { projection: { _id: 1 } },
+    );
+
+    if (!studio) {
+      return res.status(404).send({
+        message: "Studio not found.",
+      });
     }
 
     const reviews = await reviewsCollection
@@ -802,12 +870,12 @@ app.get("/studios/:id/reviews", async (req, res) => {
       .sort({ createdAt: -1 })
       .toArray();
 
-    res.send(reviews);
+    return res.status(200).send(reviews);
   } catch (error) {
     console.error("Failed to get reviews:", error.message);
 
-    res.status(500).send({
-      message: "Failed to get reviews",
+    return res.status(500).send({
+      message: "Failed to get reviews.",
     });
   }
 });
