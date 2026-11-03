@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import { MongoClient, ObjectId } from "mongodb";
 import "dotenv/config";
 import { verifyToken } from "./auth.js";
@@ -7,16 +6,63 @@ import { verifyToken } from "./auth.js";
 const PORT = 5000;
 const app = express();
 
-app.use(cors());
+// Allowed frontend origins
+const allowedOrigins = new Set(
+  [
+    process.env.CLIENT_URL,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+  ].filter(Boolean),
+);
+
+console.log("Allowed CORS Origins:", Array.from(allowedOrigins));
+
+// CORS Middleware with HTTPOnly Cookie support
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  console.log("CORS CHECK:", req.method, origin || "No Origin");
+
+  if (origin && allowedOrigins.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Vary", "Origin");
+  }
+
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+  );
+
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    req.headers["access-control-request-headers"] ||
+      "Content-Type, Authorization",
+  );
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
 app.use(express.json());
 
-const client = new MongoClient(process.env.MONGO_URI);
+const mongoUri = process.env.MONGO_URI;
+
+if (!mongoUri) {
+  throw new Error("MONGO_URI is missing. Check your server .env file.");
+}
+
+const client = new MongoClient(mongoUri);
 const db = client.db("cat-harry");
 
 const studiosCollection = db.collection("studios");
 const bookingsCollection = db.collection("bookings");
 const reviewsCollection = db.collection("reviews");
 
+// MongoDB Connection
 export async function connectToMongoDB() {
   try {
     await client.connect();
@@ -28,6 +74,7 @@ export async function connectToMongoDB() {
   }
 }
 
+// Start Server
 connectToMongoDB()
   .then(() => {
     app.listen(PORT, () => {
@@ -57,7 +104,7 @@ app.get("/protected", verifyToken, (req, res) => {
   });
 });
 
-// Get Logged-in User's Studios - JWT Protected
+// Get Logged-in User's Studios
 app.get("/my-studios", verifyToken, async (req, res) => {
   try {
     const userEmail = req.user?.email?.trim().toLowerCase();
@@ -231,6 +278,7 @@ app.post("/studios", verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error("Failed to add studio:", error.message);
+
     res.status(500).send({
       success: false,
       message: "Failed to add studio.",
@@ -343,6 +391,7 @@ app.put("/studios/:id", verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error("Failed to update studio:", error.message);
+
     res.status(500).send({
       success: false,
       message: "Failed to update studio.",
@@ -400,6 +449,7 @@ app.delete("/studios/:id", verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error("Failed to delete studio:", error.message);
+
     res.status(500).send({
       success: false,
       message: "Failed to delete studio.",
@@ -410,13 +460,7 @@ app.delete("/studios/:id", verifyToken, async (req, res) => {
 // Create New Booking - JWT Protected
 app.post("/bookings", verifyToken, async (req, res) => {
   try {
-    const {
-      studioId,
-      bookingDate,
-      startTime,
-      endTime,
-      totalAmount,
-    } = req.body;
+    const { studioId, bookingDate, startTime, endTime, totalAmount } = req.body;
 
     const userName = req.user?.name?.trim();
     const userEmail = req.user?.email?.trim().toLowerCase();
@@ -485,6 +529,7 @@ app.post("/bookings", verifyToken, async (req, res) => {
       });
     }
 
+    // Prevent overlapping Confirmed bookings
     const conflictingBooking = await bookingsCollection.findOne({
       studioId,
       bookingDate,
@@ -522,6 +567,7 @@ app.post("/bookings", verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error("Failed to create booking:", error.message);
+
     res.status(500).send({
       message: "Failed to create booking.",
     });
@@ -573,6 +619,7 @@ app.get("/bookings", verifyToken, async (req, res) => {
     res.status(200).send(bookingsWithStudioDetails);
   } catch (error) {
     console.error("Failed to get bookings:", error.message);
+
     res.status(500).send({
       message: "Failed to get bookings.",
     });
@@ -623,6 +670,7 @@ app.patch("/bookings/:id/cancel", verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error("Failed to cancel booking:", error.message);
+
     res.status(500).send({
       message: "Failed to cancel booking.",
     });
@@ -739,6 +787,7 @@ app.post("/studios/:id/reviews", verifyToken, async (req, res) => {
     });
   }
 });
+
 // Get Reviews of a Studio
 app.get("/studios/:id/reviews", async (req, res) => {
   try {
@@ -756,6 +805,9 @@ app.get("/studios/:id/reviews", async (req, res) => {
     res.send(reviews);
   } catch (error) {
     console.error("Failed to get reviews:", error.message);
-    res.status(500).send({ message: "Failed to get reviews" });
+
+    res.status(500).send({
+      message: "Failed to get reviews",
+    });
   }
 });
