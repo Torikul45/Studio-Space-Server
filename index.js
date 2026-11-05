@@ -3,17 +3,11 @@ import { MongoClient, ObjectId } from "mongodb";
 import "dotenv/config";
 import { verifyToken } from "./auth.js";
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 const app = express();
 
 // Allowed frontend origins
-const allowedOrigins = new Set(
-  [
-    process.env.CLIENT_URL,
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-  ].filter(Boolean),
-);
+const allowedOrigins = new Set([process.env.CLIENT_URL].filter(Boolean));
 
 console.log("Allowed CORS Origins:", Array.from(allowedOrigins));
 
