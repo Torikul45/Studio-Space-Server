@@ -2,44 +2,20 @@ import express from "express";
 import { MongoClient, ObjectId } from "mongodb";
 import "dotenv/config";
 import { verifyToken } from "./auth.js";
+import cors from "cors";
 
 const PORT = process.env.PORT || 5000;
 const app = express();
 
 // Allowed frontend origins
-const allowedOrigins = new Set([process.env.CLIENT_URL].filter(Boolean));
+  app.use(
+  cors({
+    origin: `${process.env.CLIENT_URL}`,
+    credentials: true,
+  }),
+);
 
-console.log("Allowed CORS Origins:", Array.from(allowedOrigins));
 
-// CORS Middleware with HTTPOnly Cookie support
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-
-  console.log("CORS CHECK:", req.method, origin || "No Origin");
-
-  if (origin && allowedOrigins.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-    res.setHeader("Vary", "Origin");
-  }
-
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
-  );
-
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    req.headers["access-control-request-headers"] ||
-      "Content-Type, Authorization",
-  );
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
-  next();
-});
 
 app.use(express.json());
 
