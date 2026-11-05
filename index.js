@@ -56,28 +56,35 @@ const studiosCollection = db.collection("studios");
 const bookingsCollection = db.collection("bookings");
 const reviewsCollection = db.collection("reviews");
 
-// MongoDB Connection
-export async function connectToMongoDB() {
-  try {
-    await client.connect();
-    console.log("You successfully connected to MongoDB!");
-    return client;
-  } catch (error) {
-    console.error("MongoDB connection failed:", error.message);
-    throw error;
+// MongoDB Connection (Vercel Compatible)
+let connectionPromise;
+
+export function connectToMongoDB() {
+  if (!connectionPromise) {
+    connectionPromise = client.connect().catch((error) => {
+      connectionPromise = null;
+      console.error("MongoDB connection failed:", error.message);
+      throw error;
+    });
   }
+
+  return connectionPromise;
 }
 
-// Start Server
-connectToMongoDB()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
+// Connect MongoDB before handling API requests
+app.use(async (req, res, next) => {
+  try {
+    await connectToMongoDB();
+    next();
+  } catch (error) {
+    console.error("MongoDB connection failed:", error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Database connection failed.",
     });
-  })
-  .catch((error) => {
-    console.error("Server could not start:", error.message);
-  });
+  }
+});
 
 // Home Route
 app.get("/", (req, res) => {
@@ -873,3 +880,18 @@ app.get("/studios/:id/reviews", async (req, res) => {
     });
   }
 });
+// Start Server Locally
+if (!process.env.VERCEL) {
+  connectToMongoDB()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+      });
+    })
+    .catch((error) => {
+      console.error("Server could not start:", error.message);
+    });
+}
+
+// Export Express App for Vercel
+export default app;
